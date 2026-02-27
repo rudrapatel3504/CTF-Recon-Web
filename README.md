@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # CTF Recon Tool - Web App
 
 A dark hacker-style web interface for the CTF Recon Tool, built with Flask.
@@ -43,3 +44,6 @@ ctf-webapp/
 
 ## ⚠️ Legal Disclaimer
 Only use on systems you own or have explicit permission to test.
+=======
+# CTF-Recon-Web
+>>>>>>> ee5c8539a049468d114ee201075625debdf2ade6
