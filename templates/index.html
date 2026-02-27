@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>CTF Recon Tool</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --green: #00ff41;
+    --green-dim: #00cc33;
+    --green-glow: rgba(0,255,65,0.15);
+    --green-faint: rgba(0,255,65,0.05);
+    --red: #ff3131;
+    --yellow: #ffd700;
+    --cyan: #00ffff;
+    --bg: #020c02;
+    --bg2: #050f05;
+    --border: rgba(0,255,65,0.2);
+    --font-mono: 'Share Tech Mono', monospace;
+    --font-display: 'Orbitron', monospace;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--green);
+    font-family: var(--font-mono);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.08) 2px,
+      rgba(0,0,0,0.08) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* CRT flicker */
+  @keyframes flicker {
+    0%,100% { opacity:1 }
+    92% { opacity:1 }
+    93% { opacity:0.85 }
+    94% { opacity:1 }
+    96% { opacity:0.9 }
+    97% { opacity:1 }
+  }
+  body { animation: flicker 8s infinite; }
+
+  /* ── Header ── */
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 24px 40px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    background: linear-gradient(180deg, rgba(0,255,65,0.04) 0%, transparent 100%);
+  }
+
+  .logo {
+    font-family: var(--font-display);
+    font-size: 1.6rem;
+    font-weight: 900;
+    letter-spacing: 4px;
+    text-shadow: 0 0 20px var(--green), 0 0 40px var(--green-dim);
+  }
+
+  .logo span { color: var(--cyan); }
+
+  .status-bar {
+    margin-left: auto;
+    display: flex;
+    gap: 20px;
+    font-size: 0.75rem;
+    color: var(--green-dim);
+  }
+
+  .status-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: pulse 2s infinite;
+    margin-right: 6px;
+  }
+
+  @keyframes pulse {
+    0%,100% { opacity:1; transform: scale(1); }
+    50% { opacity:0.5; transform: scale(0.8); }
+  }
+
+  /* ── Layout ── */
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 40px 20px;
+  }
+
+  /* ── Tabs ── */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 30px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0;
+  }
+
+  .tab {
+    padding: 10px 24px;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    letter-spacing: 2px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-bottom: none;
+    color: var(--green-dim);
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+    position: relative;
+    bottom: -1px;
+  }
+
+  .tab:hover { color: var(--green); border-color: var(--border); }
+
+  .tab.active {
+    color: var(--green);
+    border-color: var(--border);
+    border-bottom-color: var(--bg);
+    background: var(--green-faint);
+    text-shadow: 0 0 10px var(--green);
+  }
+
+  .tab-icon { margin-right: 8px; }
+
+  /* ── Panel ── */
+  .panel { display: none; }
+  .panel.active { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+
+  @media (max-width: 768px) {
+    .panel.active { grid-template-columns: 1fr; }
+    header { padding: 16px 20px; flex-wrap: wrap; }
+    .logo { font-size: 1.1rem; }
+  }
+
+  /* ── Card ── */
+  .card {
+    border: 1px solid var(--border);
+    background: var(--bg2);
+    padding: 24px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--green), transparent);
+  }
+
+  .card-title {
+    font-family: var(--font-display);
+    font-size: 0.7rem;
+    letter-spacing: 3px;
+    color: var(--green-dim);
+    margin-bottom: 20px;
+    text-transform: uppercase;
+  }
+
+  /* ── Form Elements ── */
+  .field { margin-bottom: 16px; }
+
+  label {
+    display: block;
+    font-size: 0.75rem;
+    letter-spacing: 2px;
+    color: var(--green-dim);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+  }
+
+  input[type="text"], input[type="number"] {
+    width: 100%;
+    background: rgba(0,255,65,0.03);
+    border: 1px solid var(--border);
+    color: var(--green);
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    padding: 10px 14px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    caret-color: var(--green);
+  }
+
+  input:focus {
+    border-color: var(--green);
+    box-shadow: 0 0 12px var(--green-glow), inset 0 0 8px var(--green-faint);
+  }
+
+  input::placeholder { color: rgba(0,255,65,0.25); }
+
+  .port-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  /* ── Button ── */
+  .btn {
+    width: 100%;
+    padding: 12px;
+    background: transparent;
+    border: 1px solid var(--green);
+    color: var(--green);
+    font-family: var(--font-display);
+    font-size: 0.75rem;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--green);
+    transform: translateX(-100%);
+    transition: transform 0.2s;
+    z-index: 0;
+  }
+
+  .btn:hover::before { transform: translateX(0); }
+  .btn:hover { color: var(--bg); text-shadow: none; }
+  .btn span { position: relative; z-index: 1; }
+
+  .btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    border-color: var(--green-dim);
+  }
+  .btn:disabled::before { display: none; }
+
+  /* ── Terminal Output ── */
+  .terminal {
+    background: #000;
+    border: 1px solid var(--border);
+    padding: 16px;
+    min-height: 300px;
+    max-height: 500px;
+    overflow-y: auto;
+    font-size: 0.82rem;
+    line-height: 1.7;
+    position: relative;
+  }
+
+  .terminal::-webkit-scrollbar { width: 4px; }
+  .terminal::-webkit-scrollbar-track { background: #000; }
+  .terminal::-webkit-scrollbar-thumb { background: var(--green-dim); }
+
+  .terminal-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.72rem;
+    color: var(--green-dim);
+    letter-spacing: 2px;
+  }
+
+  .t-dot { width:10px; height:10px; border-radius:50%; }
+  .t-red { background:#ff5f57; }
+  .t-yellow { background:#febc2e; }
+  .t-green-d { background:#28c840; }
+
+  .line { display: block; }
+  .line.success { color: var(--green); }
+  .line.error   { color: var(--red); }
+  .line.warning { color: var(--yellow); }
+  .line.info    { color: var(--cyan); }
+  .line.dim     { color: rgba(0,255,65,0.4); }
+  .line.header  { color: var(--green); font-family: var(--font-display); letter-spacing: 2px; font-size: 0.75rem; }
+
+  .prompt::before { content: '> '; color: var(--green-dim); }
+
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+  .cursor::after {
+    content: '█';
+    animation: blink 1s infinite;
+    color: var(--green);
+    margin-left: 2px;
+  }
+
+  /* ── Loader ── */
+  .loader {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8rem;
+    color: var(--green-dim);
+    margin-top: 10px;
+  }
+  .loader.active { display: flex; }
+
+  @keyframes spin {
+    0%  { content: '⠋' } 12% { content: '⠙' } 25% { content: '⠹' }
+    37% { content: '⠸' } 50% { content: '⠼' } 62% { content: '⠴' }
+    75% { content: '⠦' } 87% { content: '⠧' } 100%{ content: '⠇' }
+  }
+
+  .spinner {
+    display: inline-block;
+    width: 14px;
+    animation: spinner-anim 0.8s steps(8) infinite;
+  }
+
+  @keyframes spinner-anim {
+    0%   { content: '⠋'; } 12%  { content: '⠙'; } 25%  { content: '⠸'; }
+    37%  { content: '⠼'; } 50%  { content: '⠴'; } 62%  { content: '⠦'; }
+    75%  { content: '⠧'; } 87%  { content: '⠇'; } 100% { content: '⠏'; }
+  }
+
+  .spinner::before { content: '⠋'; animation: spinner-chars 0.8s steps(8) infinite; }
+  @keyframes spinner-chars {
+    0%  { content:'⠋' } 12% { content:'⠙' } 25% { content:'⠸' }
+    37% { content:'⠼' } 50% { content:'⠴' } 62% { content:'⠦' }
+    75% { content:'⠧' } 87% { content:'⠇' } 100%{ content:'⠏' }
+  }
+
+  /* ── Glitch text ── */
+  @keyframes glitch {
+    0%,100% { clip-path: none; transform: none; }
+    20% { clip-path: polygon(0 20%, 100% 20%, 100% 40%, 0 40%); transform: translate(-3px, 0); }
+    40% { clip-path: polygon(0 60%, 100% 60%, 100% 80%, 0 80%); transform: translate(3px, 0); }
+    60% { clip-path: none; transform: none; }
+  }
+
+  /* ── Banner ASCII ── */
+  .ascii-banner {
+    text-align: center;
+    padding: 30px 0 10px;
+    color: var(--green-dim);
+    font-size: 0.6rem;
+    line-height: 1.2;
+    letter-spacing: 1px;
+    text-shadow: 0 0 10px var(--green-dim);
+    white-space: pre;
+    overflow: hidden;
+  }
+
+  .tagline {
+    text-align: center;
+    font-family: var(--font-display);
+    font-size: 0.65rem;
+    letter-spacing: 6px;
+    color: rgba(0,255,65,0.3);
+    margin-bottom: 30px;
+    text-transform: uppercase;
+  }
+
+  /* scrollbar for full page */
+  html::-webkit-scrollbar { width: 4px; }
+  html::-webkit-scrollbar-track { background: var(--bg); }
+  html::-webkit-scrollbar-thumb { background: var(--green-dim); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">CTF<span>_</span>RECON</div>
+  <div class="status-bar">
+    <span><span class="status-dot"></span>SYSTEM ONLINE</span>
+    <span id="clock"></span>
+  </div>
+</header>
+
+<div class="container">
+
+  <div class="ascii-banner">
+ ██████╗████████╗███████╗    ██████╗ ███████╗ ██████╗ ██████╗ ███╗   ██╗
+██╔════╝╚══██╔══╝██╔════╝    ██╔══██╗██╔════╝██╔════╝██╔═══██╗████╗  ██║
+██║        ██║   █████╗      ██████╔╝█████╗  ██║     ██║   ██║██╔██╗ ██║
+██║        ██║   ██╔══╝      ██╔══██╗██╔══╝  ██║     ██║   ██║██║╚██╗██║
+╚██████╗   ██║   ██║         ██║  ██║███████╗╚██████╗╚██████╔╝██║ ╚████║
+ ╚═════╝   ╚═╝   ╚═╝         ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝</div>
+
+  <div class="tagline">// Reconnaissance Suite v2.0 //</div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('portscan')"><span class="tab-icon">⬡</span>PORT SCAN</button>
+    <button class="tab" onclick="switchTab('subdomain')"><span class="tab-icon">◈</span>SUBDOMAIN</button>
+    <button class="tab" onclick="switchTab('whois')"><span class="tab-icon">◎</span>WHOIS</button>
+    <button class="tab" onclick="switchTab('dirbrute')"><span class="tab-icon">▦</span>DIR BRUTE</button>
+  </div>
+
+  <!-- PORT SCAN -->
+  <div id="tab-portscan" class="panel active">
+    <div class="card">
+      <div class="card-title">⬡ Port Scanner</div>
+      <div class="field">
+        <label>Target Host / IP</label>
+        <input type="text" id="ps-target" placeholder="e.g. scanme.nmap.org" />
+      </div>
+      <div class="field port-row">
+        <div>
+          <label>Start Port</label>
+          <input type="number" id="ps-start" value="1" min="1" max="65535"/>
+        </div>
+        <div>
+          <label>End Port</label>
+          <input type="number" id="ps-end" value="1024" min="1" max="65535"/>
+        </div>
+      </div>
+      <button class="btn" id="ps-btn" onclick="runPortScan()"><span>▶ EXECUTE SCAN</span></button>
+      <div class="loader" id="ps-loader"><span class="spinner"></span> SCANNING PORTS...</div>
+    </div>
+    <div class="card">
+      <div class="card-title">// OUTPUT STREAM</div>
+      <div class="terminal" id="ps-output">
+        <div class="terminal-header">
+          <div class="t-dot t-red"></div><div class="t-dot t-yellow"></div><div class="t-dot t-green-d"></div>
+          <span>terminal — ctfrecon</span>
+        </div>
+        <span class="line dim">// Awaiting target...</span>
+        <span class="line cursor"> </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUBDOMAIN -->
+  <div id="tab-subdomain" class="panel">
+    <div class="card">
+      <div class="card-title">◈ Subdomain Enumerator</div>
+      <div class="field">
+        <label>Target Domain</label>
+        <input type="text" id="sd-domain" placeholder="e.g. example.com" />
+      </div>
+      <button class="btn" id="sd-btn" onclick="runSubdomain()"><span>▶ ENUMERATE</span></button>
+      <div class="loader" id="sd-loader"><span class="spinner"></span> ENUMERATING SUBDOMAINS...</div>
+    </div>
+    <div class="card">
+      <div class="card-title">// OUTPUT STREAM</div>
+      <div class="terminal" id="sd-output">
+        <div class="terminal-header">
+          <div class="t-dot t-red"></div><div class="t-dot t-yellow"></div><div class="t-dot t-green-d"></div>
+          <span>terminal — ctfrecon</span>
+        </div>
+        <span class="line dim">// Awaiting domain...</span>
+        <span class="line cursor"> </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- WHOIS -->
+  <div id="tab-whois" class="panel">
+    <div class="card">
+      <div class="card-title">◎ WHOIS / IP Lookup</div>
+      <div class="field">
+        <label>Domain or IP Address</label>
+        <input type="text" id="wh-target" placeholder="e.g. google.com or 8.8.8.8" />
+      </div>
+      <button class="btn" id="wh-btn" onclick="runWhois()"><span>▶ LOOKUP</span></button>
+      <div class="loader" id="wh-loader"><span class="spinner"></span> QUERYING WHOIS...</div>
+    </div>
+    <div class="card">
+      <div class="card-title">// OUTPUT STREAM</div>
+      <div class="terminal" id="wh-output">
+        <div class="terminal-header">
+          <div class="t-dot t-red"></div><div class="t-dot t-yellow"></div><div class="t-dot t-green-d"></div>
+          <span>terminal — ctfrecon</span>
+        </div>
+        <span class="line dim">// Awaiting target...</span>
+        <span class="line cursor"> </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- DIR BRUTE -->
+  <div id="tab-dirbrute" class="panel">
+    <div class="card">
+      <div class="card-title">▦ Directory Brute-Forcer</div>
+      <div class="field">
+        <label>Target URL</label>
+        <input type="text" id="db-url" placeholder="e.g. http://testphp.vulnweb.com" />
+      </div>
+      <button class="btn" id="db-btn" onclick="runDirBrute()"><span>▶ BRUTE FORCE</span></button>
+      <div class="loader" id="db-loader"><span class="spinner"></span> BRUTE FORCING DIRS...</div>
+    </div>
+    <div class="card">
+      <div class="card-title">// OUTPUT STREAM</div>
+      <div class="terminal" id="db-output">
+        <div class="terminal-header">
+          <div class="t-dot t-red"></div><div class="t-dot t-yellow"></div><div class="t-dot t-green-d"></div>
+          <span>terminal — ctfrecon</span>
+        </div>
+        <span class="line dim">// Awaiting URL...</span>
+        <span class="line cursor"> </span>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+// ── Clock ────────────────────────────────────────────────────────────────────
+function updateClock() {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-US', {hour12:false});
+}
+setInterval(updateClock, 1000); updateClock();
+
+// ── Tabs ─────────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+// ── Terminal helpers ──────────────────────────────────────────────────────────
+function clearTerminal(id) {
+  const t = document.getElementById(id);
+  t.innerHTML = `<div class="terminal-header">
+    <div class="t-dot t-red"></div><div class="t-dot t-yellow"></div><div class="t-dot t-green-d"></div>
+    <span>terminal — ctfrecon</span>
+  </div>`;
+}
+
+function appendLine(id, text, cls='') {
+  const t = document.getElementById(id);
+  const s = document.createElement('span');
+  s.className = 'line ' + cls;
+  s.textContent = text;
+  t.appendChild(s);
+  t.scrollTop = t.scrollHeight;
+}
+
+function setLoading(prefix, on) {
+  document.getElementById(prefix+'-btn').disabled = on;
+  document.getElementById(prefix+'-loader').classList.toggle('active', on);
+}
+
+// ── Port Scan ─────────────────────────────────────────────────────────────────
+async function runPortScan() {
+  const target = document.getElementById('ps-target').value.trim();
+  const start  = document.getElementById('ps-start').value;
+  const end    = document.getElementById('ps-end').value;
+  if (!target) { alert('Enter a target!'); return; }
+
+  clearTerminal('ps-output');
+  setLoading('ps', true);
+  appendLine('ps-output', `[*] Target    : ${target}`, 'info');
+  appendLine('ps-output', `[*] Port range: ${start} - ${end}`, 'info');
+  appendLine('ps-output', `[*] Initiating scan...`, 'dim');
+  appendLine('ps-output', ``, '');
+
+  try {
+    const res  = await fetch('/api/portscan', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({target, start, end})
+    });
+    const data = await res.json();
+
+    if (data.error) { appendLine('ps-output', `[-] ERROR: ${data.error}`, 'error'); return; }
+
+    appendLine('ps-output', `[+] Resolved  : ${data.ip}`, 'success');
+    appendLine('ps-output', ``, '');
+    appendLine('ps-output', `PORT       SERVICE         STATE`, 'header');
+    appendLine('ps-output', `─`.repeat(35), 'dim');
+
+    if (data.open_ports.length === 0) {
+      appendLine('ps-output', `[!] No open ports found in range.`, 'warning');
+    } else {
+      data.open_ports.forEach(p => {
+        appendLine('ps-output', `${String(p.port).padEnd(11)}${p.service.padEnd(16)}OPEN`, 'success');
+      });
+      appendLine('ps-output', ``, '');
+      appendLine('ps-output', `[*] ${data.open_ports.length} open port(s) found.`, 'info');
+    }
+  } catch(e) {
+    appendLine('ps-output', `[-] Request failed: ${e.message}`, 'error');
+  } finally {
+    setLoading('ps', false);
+  }
+}
+
+// ── Subdomain ─────────────────────────────────────────────────────────────────
+async function runSubdomain() {
+  const domain = document.getElementById('sd-domain').value.trim();
+  if (!domain) { alert('Enter a domain!'); return; }
+
+  clearTerminal('sd-output');
+  setLoading('sd', true);
+  appendLine('sd-output', `[*] Domain     : ${domain}`, 'info');
+  appendLine('sd-output', `[*] Enumerating subdomains...`, 'dim');
+  appendLine('sd-output', ``, '');
+
+  try {
+    const res  = await fetch('/api/subdomain', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({domain})
+    });
+    const data = await res.json();
+
+    if (data.error) { appendLine('sd-output', `[-] ERROR: ${data.error}`, 'error'); return; }
+
+    appendLine('sd-output', `SUBDOMAIN                                IP ADDRESS`, 'header');
+    appendLine('sd-output', `─`.repeat(55), 'dim');
+
+    if (data.found.length === 0) {
+      appendLine('sd-output', `[!] No subdomains found. Try a larger wordlist.`, 'warning');
+    } else {
+      data.found.forEach(f => {
+        appendLine('sd-output', `${f.subdomain.padEnd(42)}${f.ip}`, 'success');
+      });
+      appendLine('sd-output', ``, '');
+      appendLine('sd-output', `[*] ${data.found.length} subdomain(s) discovered.`, 'info');
+    }
+  } catch(e) {
+    appendLine('sd-output', `[-] Request failed: ${e.message}`, 'error');
+  } finally {
+    setLoading('sd', false);
+  }
+}
+
+// ── WHOIS ─────────────────────────────────────────────────────────────────────
+async function runWhois() {
+  const target = document.getElementById('wh-target').value.trim();
+  if (!target) { alert('Enter a target!'); return; }
+
+  clearTerminal('wh-output');
+  setLoading('wh', true);
+  appendLine('wh-output', `[*] Looking up : ${target}`, 'info');
+  appendLine('wh-output', ``, '');
+
+  try {
+    const res  = await fetch('/api/whois', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({target})
+    });
+    const data = await res.json();
+
+    if (data.error) { appendLine('wh-output', `[-] ERROR: ${data.error}`, 'error'); return; }
+
+    appendLine('wh-output', `[+] Resolved IP : ${data.ip}`, 'success');
+    appendLine('wh-output', ``, '');
+
+    if (Object.keys(data.geo).length) {
+      appendLine('wh-output', `── IP GEOLOCATION ──`, 'header');
+      Object.entries(data.geo).forEach(([k,v]) => {
+        if (v) appendLine('wh-output', `  ${k.padEnd(14)}: ${v}`, 'success');
+      });
+      appendLine('wh-output', ``, '');
+    }
+
+    if (Object.keys(data.whois).length) {
+      appendLine('wh-output', `── WHOIS INFO ──`, 'header');
+      Object.entries(data.whois).forEach(([k,v]) => {
+        if (v && v !== 'None') appendLine('wh-output', `  ${k.padEnd(14)}: ${v}`, 'success');
+      });
+    }
+
+    if (data.whois_error) appendLine('wh-output', `[!] WHOIS: ${data.whois_error}`, 'warning');
+
+  } catch(e) {
+    appendLine('wh-output', `[-] Request failed: ${e.message}`, 'error');
+  } finally {
+    setLoading('wh', false);
+  }
+}
+
+// ── Dir Brute ────────────────────────────────────────────────────────────────
+async function runDirBrute() {
+  const url = document.getElementById('db-url').value.trim();
+  if (!url) { alert('Enter a URL!'); return; }
+
+  clearTerminal('db-output');
+  setLoading('db', true);
+  appendLine('db-output', `[*] Target URL : ${url}`, 'info');
+  appendLine('db-output', `[*] Brute forcing directories...`, 'dim');
+  appendLine('db-output', ``, '');
+
+  try {
+    const res  = await fetch('/api/dirbrute', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({url})
+    });
+    const data = await res.json();
+
+    if (data.error) { appendLine('db-output', `[-] ERROR: ${data.error}`, 'error'); return; }
+
+    appendLine('db-output', `STATUS     MEANING                   URL`, 'header');
+    appendLine('db-output', `─`.repeat(70), 'dim');
+
+    if (data.found.length === 0) {
+      appendLine('db-output', `[!] No interesting paths found.`, 'warning');
+    } else {
+      data.found.forEach(f => {
+        const cls = f.status === 200 ? 'success' : 'warning';
+        appendLine('db-output', `${String(f.status).padEnd(11)}${f.meaning.padEnd(26)}${f.url}`, cls);
+      });
+      appendLine('db-output', ``, '');
+      appendLine('db-output', `[*] ${data.found.length} path(s) discovered.`, 'info');
+    }
+  } catch(e) {
+    appendLine('db-output', `[-] Request failed: ${e.message}`, 'error');
+  } finally {
+    setLoading('db', false);
+  }
+}
+
+// ── Enter key support ─────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const active = document.querySelector('.panel.active').id;
+  if (active === 'tab-portscan') runPortScan();
+  else if (active === 'tab-subdomain') runSubdomain();
+  else if (active === 'tab-whois') runWhois();
+  else if (active === 'tab-dirbrute') runDirBrute();
+});
+</script>
+</body>
+</html>
