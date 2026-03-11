@@ -3,11 +3,11 @@ Description=Gunicorn instance to serve CTF-Recon-Web
 After=network.target
 
 [Service]
-User=ubuntu
-Group=www-data
-WorkingDirectory=/home/ubuntu/CTF-Recon-Web
-Environment="PATH=/home/ubuntu/CTF-Recon-Web/venv/bin"
-ExecStart=/home/ubuntu/CTF-Recon-Web/venv/bin/gunicorn --workers 3 --bind unix:ctfrecon.sock -m 007 app:app
+User=ec2-user
+Group=nginx
+WorkingDirectory=/home/ec2-user/CTF-Recon-Web
+Environment="PATH=/home/ec2-user/CTF-Recon-Web/venv/bin"
+ExecStart=/home/ec2-user/CTF-Recon-Web/venv/bin/gunicorn --workers 3 --bind unix:ctfrecon.sock -m 007 app:app
 
 [Install]
 WantedBy=multi-user.target
