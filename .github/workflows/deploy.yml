@@ -8,13 +8,10 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # If using Environment secrets, uncomment the line below and replace 'production' with your environment name:
-    # environment: production
     steps:
       - name: Deploy to EC2
         uses: appleboy/ssh-action@master
         with:
-          # If using Variables instead of Secrets, change 'secrets.' to 'vars.'
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
