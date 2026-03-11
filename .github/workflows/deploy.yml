@@ -9,6 +9,13 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Debug Secrets Existence
+        run: |
+          echo "Checking if secrets exist..."
+          echo "EC2_HOST length: ${{ secrets.EC2_HOST != '' }}"
+          echo "EC2_USERNAME length: ${{ secrets.EC2_USERNAME != '' }}"
+          echo "EC2_SSH_KEY length: ${{ secrets.EC2_SSH_KEY != '' }}"
+          
       - name: Deploy to EC2
         uses: appleboy/ssh-action@master
         with:
