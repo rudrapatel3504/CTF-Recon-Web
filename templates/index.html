@@ -479,6 +479,11 @@
         <label>Target Domain</label>
         <input type="text" id="sd-domain" placeholder="e.g. example.com" />
       </div>
+      <div class="field">
+        <label>Custom Wordlist <span style="color:rgba(0,255,65,0.4);font-size:0.7rem;">(optional .txt — overrides default)</span></label>
+        <label class="file-upload-label" id="sd-wl-label" for="sd-wordlist">📋 Click to upload custom wordlist</label>
+        <input type="file" id="sd-wordlist" accept=".txt" onchange="onWordlistSelect(this, 'sd-wl-label')" />
+      </div>
       <button class="btn" id="sd-btn" onclick="runSubdomain()"><span>▶ ENUMERATE</span></button>
       <div class="loader" id="sd-loader"><span class="spinner"></span> ENUMERATING SUBDOMAINS...</div>
     </div>
@@ -527,6 +532,11 @@
         <label>Target URL</label>
         <input type="text" id="db-url" placeholder="e.g. http://testphp.vulnweb.com" />
       </div>
+      <div class="field">
+        <label>Custom Wordlist <span style="color:rgba(0,255,65,0.4);font-size:0.7rem;">(optional .txt — overrides default)</span></label>
+        <label class="file-upload-label" id="db-wl-label" for="db-wordlist">📋 Click to upload custom wordlist</label>
+        <input type="file" id="db-wordlist" accept=".txt" onchange="onWordlistSelect(this, 'db-wl-label')" />
+      </div>
       <button class="btn" id="db-btn" onclick="runDirBrute()"><span>▶ BRUTE FORCE</span></button>
       <div class="loader" id="db-loader"><span class="spinner"></span> BRUTE FORCING DIRS...</div>
     </div>
@@ -553,6 +563,11 @@
           📄 Click to select a PDF file
         </label>
         <input type="file" id="pdf-file" accept=".pdf" onchange="onPdfSelect(this)" />
+      </div>
+      <div class="field">
+        <label>Custom Password Wordlist <span style="color:rgba(0,255,65,0.4);font-size:0.7rem;">(optional .txt — overrides DDMMYYYY default)</span></label>
+        <label class="file-upload-label" id="pdf-wl-label" for="pdf-wordlist">📋 Click to upload custom wordlist</label>
+        <input type="file" id="pdf-wordlist" accept=".txt" onchange="onWordlistSelect(this, 'pdf-wl-label')" />
       </div>
       <button class="btn" id="pdf-btn" onclick="runPdfUnlock()"><span>▶ UNLOCK PDF</span></button>
       <div class="loader" id="pdf-loader"><span class="spinner"></span> CRACKING PASSWORD...</div>
@@ -659,21 +674,28 @@ async function runSubdomain() {
   const domain = document.getElementById('sd-domain').value.trim();
   if (!domain) { alert('Enter a domain!'); return; }
 
+  const wlFile = document.getElementById('sd-wordlist').files[0];
+  const wlNote = wlFile ? `custom (${wlFile.name})` : 'default';
+
   clearTerminal('sd-output');
   setLoading('sd', true);
   appendLine('sd-output', `[*] Domain     : ${domain}`, 'info');
+  appendLine('sd-output', `[*] Wordlist   : ${wlNote}`, 'info');
   appendLine('sd-output', `[*] Enumerating subdomains...`, 'dim');
   appendLine('sd-output', ``, '');
 
   try {
-    const res  = await fetch('/api/subdomain', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({domain})
-    });
+    const formData = new FormData();
+    formData.append('domain', domain);
+    if (wlFile) formData.append('wordlist', wlFile);
+
+    const res  = await fetch('/api/subdomain', { method:'POST', body: formData });
     const data = await res.json();
 
     if (data.error) { appendLine('sd-output', `[-] ERROR: ${data.error}`, 'error'); return; }
 
+    appendLine('sd-output', `[*] Wordlist used : ${data.wordlist}`, 'dim');
+    appendLine('sd-output', ``, '');
     appendLine('sd-output', `SUBDOMAIN                                IP ADDRESS`, 'header');
     appendLine('sd-output', `─`.repeat(55), 'dim');
 
@@ -744,21 +766,28 @@ async function runDirBrute() {
   const url = document.getElementById('db-url').value.trim();
   if (!url) { alert('Enter a URL!'); return; }
 
+  const wlFile = document.getElementById('db-wordlist').files[0];
+  const wlNote = wlFile ? `custom (${wlFile.name})` : 'default';
+
   clearTerminal('db-output');
   setLoading('db', true);
   appendLine('db-output', `[*] Target URL : ${url}`, 'info');
+  appendLine('db-output', `[*] Wordlist   : ${wlNote}`, 'info');
   appendLine('db-output', `[*] Brute forcing directories...`, 'dim');
   appendLine('db-output', ``, '');
 
   try {
-    const res  = await fetch('/api/dirbrute', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({url})
-    });
+    const formData = new FormData();
+    formData.append('url', url);
+    if (wlFile) formData.append('wordlist', wlFile);
+
+    const res  = await fetch('/api/dirbrute', { method:'POST', body: formData });
     const data = await res.json();
 
     if (data.error) { appendLine('db-output', `[-] ERROR: ${data.error}`, 'error'); return; }
 
+    appendLine('db-output', `[*] Wordlist used : ${data.wordlist}`, 'dim');
+    appendLine('db-output', ``, '');
     appendLine('db-output', `STATUS     MEANING                   URL`, 'header');
     appendLine('db-output', `─`.repeat(70), 'dim');
 
@@ -790,6 +819,18 @@ document.addEventListener('keydown', e => {
   else if (active === 'tab-pdfunlock') runPdfUnlock();
 });
 
+// ── Wordlist file select handler ──────────────────────────────────────────────
+function onWordlistSelect(input, labelId) {
+  const label = document.getElementById(labelId);
+  if (input.files && input.files[0]) {
+    label.textContent = `📋 ${input.files[0].name} (${(input.files[0].size/1024).toFixed(1)} KB)`;
+    label.classList.add('has-file');
+  } else {
+    label.textContent = '📋 Click to upload custom wordlist';
+    label.classList.remove('has-file');
+  }
+}
+
 // ── PDF Unlock ────────────────────────────────────────────────────────────────
 function onPdfSelect(input) {
   const label = document.getElementById('pdf-label');
@@ -809,22 +850,23 @@ async function runPdfUnlock() {
   }
 
   const file = fileInput.files[0];
+  const wlFile = document.getElementById('pdf-wordlist').files[0];
+  const strategy = wlFile ? `custom wordlist (${wlFile.name})` : 'DDMMYYYY date brute-force (120 years)';
+
   clearTerminal('pdf-output');
   setLoading('pdf', true);
   appendLine('pdf-output', `[*] File      : ${file.name}`, 'info');
   appendLine('pdf-output', `[*] Size      : ${(file.size/1024).toFixed(1)} KB`, 'info');
-  appendLine('pdf-output', `[*] Strategy  : DDMMYYYY date brute-force (120 years)`, 'dim');
+  appendLine('pdf-output', `[*] Strategy  : ${strategy}`, 'dim');
   appendLine('pdf-output', `[*] Running pdfcrack... (may take 1-3 min)`, 'dim');
   appendLine('pdf-output', ``, '');
 
   try {
     const formData = new FormData();
     formData.append('file', file);
+    if (wlFile) formData.append('wordlist', wlFile);
 
-    const res = await fetch('/api/pdfunlock', {
-      method: 'POST',
-      body: formData
-    });
+    const res = await fetch('/api/pdfunlock', { method: 'POST', body: formData });
 
     if (!res.ok) {
       let errMsg = `Server error (HTTP ${res.status})`;
@@ -842,10 +884,10 @@ async function runPdfUnlock() {
     const blob = await res.blob();
     const base = file.name.replace(/\.pdf$/i, '');
     const dlName = `${base}_unlocked.pdf`;
-    const url = URL.createObjectURL(blob);
+    const dlUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = dlName; a.click();
-    URL.revokeObjectURL(url);
+    a.href = dlUrl; a.download = dlName; a.click();
+    URL.revokeObjectURL(dlUrl);
 
     appendLine('pdf-output', `[+] Password cracked successfully!`, 'success');
     appendLine('pdf-output', `[+] Unlocked PDF downloading as: ${dlName}`, 'success');

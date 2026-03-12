@@ -35,9 +35,24 @@ def server_error(e):   return jsonify(error=f"Internal server error: {e}"), 500
 
 PDF_WORDLIST = "/tmp/pdf_dates_wordlist.txt"
 ALLOWED_EXTENSIONS = {'pdf'}
+ALLOWED_WORDLIST_EXTENSIONS = {'txt'}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def allowed_wordlist(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_WORDLIST_EXTENSIONS
+
+def load_wordlist(uploaded_file, default_path):
+    """Load wordlist from uploaded file or fall back to default path."""
+    if uploaded_file and uploaded_file.filename and allowed_wordlist(uploaded_file.filename):
+        content = uploaded_file.read().decode("utf-8", errors="ignore")
+        words = [l.strip() for l in content.splitlines() if l.strip()]
+        return words, f"custom ({len(words)} entries)"
+    with open(default_path) as f:
+        words = [l.strip() for l in f if l.strip()]
+    return words, "default"
+
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -98,17 +113,16 @@ def portscan():
 
 @app.route("/api/subdomain", methods=["POST"])
 def subdomain():
-    data   = request.json
-    domain = data.get("domain", "").strip().lower()
+    domain = (request.form.get("domain") or (request.json or {}).get("domain", "")).strip().lower()
 
     if not domain:
         return jsonify({"error": "No domain provided"}), 400
 
     try:
-        with open("CTF_Recon/wordlists/subdomains.txt") as f:
-            words = [l.strip() for l in f if l.strip()]
+        uploaded = request.files.get("wordlist")
+        words, wl_source = load_wordlist(uploaded, "CTF_Recon/wordlists/subdomains.txt")
     except FileNotFoundError:
-        return jsonify({"error": "Wordlist not found"}), 500
+        return jsonify({"error": "Default wordlist not found"}), 500
 
     def check(word):
         sub = f"{word}.{domain}"
@@ -118,12 +132,11 @@ def subdomain():
         except Exception:
             return None
 
-    found = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=50) as ex:
         results = ex.map(check, words)
     found = [r for r in results if r]
 
-    return jsonify({"domain": domain, "found": found})
+    return jsonify({"domain": domain, "found": found, "wordlist": wl_source})
 
 # ── WHOIS / IP Lookup ─────────────────────────────────────────────────────────
 
@@ -175,18 +188,17 @@ def whois_lookup():
 
 @app.route("/api/dirbrute", methods=["POST"])
 def dirbrute():
-    data = request.json
-    url  = data.get("url", "").strip().rstrip("/")
+    url  = (request.form.get("url") or (request.json or {}).get("url", "")).strip().rstrip("/")
     exts = ["", ".php", ".html", ".txt", ".bak"]
 
     if not url:
         return jsonify({"error": "No URL provided"}), 400
 
     try:
-        with open("CTF_Recon/wordlists/dirs.txt") as f:
-            words = [l.strip() for l in f if l.strip()]
+        uploaded = request.files.get("wordlist")
+        words, wl_source = load_wordlist(uploaded, "CTF_Recon/wordlists/dirs.txt")
     except FileNotFoundError:
-        return jsonify({"error": "Wordlist not found"}), 500
+        return jsonify({"error": "Default wordlist not found"}), 500
 
     targets = [f"{word}{ext}" for word in words for ext in exts]
 
@@ -206,12 +218,11 @@ def dirbrute():
             pass
         return None
 
-    found = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=30) as ex:
         results = ex.map(probe, targets)
     found = [r for r in results if r]
 
-    return jsonify({"url": url, "found": found})
+    return jsonify({"url": url, "found": found, "wordlist": wl_source})
 
 # ── PDF Unlocker ──────────────────────────────────────────────────────────────
 
@@ -238,10 +249,14 @@ def pdfunlock():
         if not f or not allowed_file(f.filename):
             return jsonify({"error": "Please upload a valid PDF file"}), 400
 
-        # Check system tools
+        # Check system tools — search PATH + common install locations
+        extra_paths = ["/usr/local/bin", "/usr/bin", "/bin", "/usr/local/sbin", "/usr/sbin"]
         for tool in ("pdfcrack", "qpdf"):
-            if shutil.which(tool) is None:
-                return jsonify({"error": f"Server missing tool: {tool}. Run: sudo apt install pdfcrack qpdf"}), 500
+            found = shutil.which(tool) or any(
+                os.path.isfile(os.path.join(p, tool)) for p in extra_paths
+            )
+            if not found:
+                return jsonify({"error": f"Server missing tool: {tool}. Install with: sudo yum install -y qpdf  (for pdfcrack: build from source)"}), 500
 
         with tempfile.TemporaryDirectory() as tmpdir:
             filename    = secure_filename(f.filename) or "upload.pdf"
@@ -254,11 +269,19 @@ def pdfunlock():
             if not os.path.exists(input_path) or os.path.getsize(input_path) == 0:
                 return jsonify({"error": "Failed to save uploaded file."}), 400
 
-            # Build date wordlist
+            # Build or load wordlist
             try:
-                wordlist = _build_pdf_wordlist()
+                custom_wl = request.files.get("wordlist")
+                if custom_wl and custom_wl.filename and allowed_wordlist(custom_wl.filename):
+                    wl_path = os.path.join(tmpdir, "custom_wordlist.txt")
+                    custom_wl.save(wl_path)
+                    wordlist = wl_path
+                    wl_source = f"custom ({sum(1 for _ in open(wl_path))} entries)"
+                else:
+                    wordlist = _build_pdf_wordlist()
+                    wl_source = "default DDMMYYYY (120 years)"
             except Exception as e:
-                return jsonify({"error": f"Failed to build wordlist: {e}"}), 500
+                return jsonify({"error": f"Failed to prepare wordlist: {e}"}), 500
 
             # Run pdfcrack
             try:
