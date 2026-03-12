@@ -229,60 +229,88 @@ def _build_pdf_wordlist():
 
 @app.route("/api/pdfunlock", methods=["POST"])
 def pdfunlock():
-    if 'file' not in request.files:
-        return jsonify({"error": "No file uploaded"}), 400
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "No file uploaded"}), 400
 
-    f = request.files['file']
-    if not f or not allowed_file(f.filename):
-        return jsonify({"error": "Please upload a valid PDF file"}), 400
+        f = request.files['file']
+        if not f or not allowed_file(f.filename):
+            return jsonify({"error": "Please upload a valid PDF file"}), 400
 
-    # Check system tools
-    for tool in ("pdfcrack", "qpdf"):
-        if subprocess.run(["which", tool], capture_output=True).returncode != 0:
-            return jsonify({"error": f"Server missing tool: {tool}. Run: sudo apt install pdfcrack qpdf"}), 500
+        # Check system tools
+        for tool in ("pdfcrack", "qpdf"):
+            if subprocess.run(["which", tool], capture_output=True).returncode != 0:
+                return jsonify({"error": f"Server missing tool: {tool}. Run: sudo apt install pdfcrack qpdf"}), 500
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        filename   = secure_filename(f.filename)
-        input_path = os.path.join(tmpdir, filename)
-        base, ext  = os.path.splitext(filename)
-        output_path = os.path.join(tmpdir, f"{base}_unlocked{ext}")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            filename    = secure_filename(f.filename) or "upload.pdf"
+            input_path  = os.path.join(tmpdir, filename)
+            base, ext   = os.path.splitext(filename)
+            output_path = os.path.join(tmpdir, f"{base}_unlocked{ext}")
 
-        f.save(input_path)
+            f.save(input_path)
 
-        # Build date wordlist
-        wordlist = _build_pdf_wordlist()
+            if not os.path.exists(input_path) or os.path.getsize(input_path) == 0:
+                return jsonify({"error": "Failed to save uploaded file."}), 400
 
-        # Run pdfcrack
-        result = subprocess.run(
-            ["pdfcrack", "-f", input_path, "-w", wordlist],
-            capture_output=True, text=True, timeout=300
+            # Build date wordlist
+            try:
+                wordlist = _build_pdf_wordlist()
+            except Exception as e:
+                return jsonify({"error": f"Failed to build wordlist: {e}"}), 500
+
+            # Run pdfcrack
+            try:
+                result = subprocess.run(
+                    ["pdfcrack", "-f", input_path, "-w", wordlist],
+                    capture_output=True, text=True, timeout=360
+                )
+            except subprocess.TimeoutExpired:
+                return jsonify({"error": "pdfcrack timed out after 6 minutes. Password not found."}), 422
+            except Exception as e:
+                return jsonify({"error": f"pdfcrack failed to run: {e}"}), 500
+
+            match = re.search(r"found user-password:\s*'([^']*)'", result.stdout)
+            if not match:
+                detail = (result.stderr.strip() or result.stdout.strip() or "No output from pdfcrack.")[:300]
+                return jsonify({"error": "Password not found. Not a DDMMYYYY date in the last 120 years.", "detail": detail}), 422
+
+            password = match.group(1)
+
+            # Decrypt with qpdf
+            try:
+                dec = subprocess.run(
+                    ["qpdf", f"--password={password}", "--decrypt", input_path, output_path],
+                    capture_output=True, text=True, timeout=60
+                )
+            except subprocess.TimeoutExpired:
+                return jsonify({"error": f"Found password '{password}' but qpdf decryption timed out."}), 500
+            except Exception as e:
+                return jsonify({"error": f"qpdf failed to run: {e}"}), 500
+
+            if dec.returncode != 0:
+                err_detail = dec.stderr.strip() or "Unknown qpdf error."
+                return jsonify({"error": f"Found password '{password}' but decryption failed: {err_detail}"}), 500
+
+            if not os.path.exists(output_path):
+                return jsonify({"error": f"Found password '{password}' but output file was not created."}), 500
+
+            # Read bytes into memory BEFORE tempdir is deleted
+            with open(output_path, 'rb') as pdf_file:
+                pdf_bytes = io.BytesIO(pdf_file.read())
+
+        # tempdir is now cleaned up — serve from memory
+        pdf_bytes.seek(0)
+        return send_file(
+            pdf_bytes,
+            as_attachment=True,
+            download_name=f"{base}_unlocked{ext}",
+            mimetype="application/pdf"
         )
-        match = re.search(r"found user-password:\s*'([^']*)'" , result.stdout)
-        if not match:
-            return jsonify({"error": "Password not found. Not a DDMMYYYY date in the last 120 years."}), 422
 
-        password = match.group(1)
-
-        # Decrypt with qpdf
-        dec = subprocess.run(
-            ["qpdf", f"--password={password}", "--decrypt", input_path, output_path],
-            capture_output=True, text=True
-        )
-        if dec.returncode != 0:
-            return jsonify({"error": f"Found password '{password}' but decryption failed."}), 500
-
-        # Read bytes into memory BEFORE tempdir is deleted
-        with open(output_path, 'rb') as pdf_file:
-            pdf_bytes = io.BytesIO(pdf_file.read())
-
-    # tempdir is now cleaned up — serve from memory
-    pdf_bytes.seek(0)
-    return send_file(
-        pdf_bytes,
-        as_attachment=True,
-        download_name=f"{base}_unlocked{ext}",
-        mimetype="application/pdf"
-    )
+    except Exception as e:
+        # Catch-all: return JSON instead of Flask's HTML 500 page
+        return jsonify({"error": f"Unexpected server error: {str(e)}"}), 500
 
 # ─── Run ──────────────────────────────────────────────────────────────────────
 

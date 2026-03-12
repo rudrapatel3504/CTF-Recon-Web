@@ -830,10 +830,10 @@ async function runPdfUnlock() {
       let errMsg = `Server error (HTTP ${res.status})`;
       try {
         const text = await res.text();
-        // Try to parse as JSON first
         const data = JSON.parse(text);
         if (data.error) errMsg = data.error;
-      } catch (_) { /* server returned HTML error page */ }
+        if (data.detail) errMsg += `\n[detail] ${data.detail}`;
+      } catch (_) { /* server returned non-JSON */ }
       appendLine('pdf-output', `[-] ERROR: ${errMsg}`, 'error');
       return;
     }
