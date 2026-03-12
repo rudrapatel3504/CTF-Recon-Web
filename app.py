@@ -21,6 +21,16 @@ from werkzeug.utils import secure_filename
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB max upload
 
+# Always return JSON errors (never HTML)
+@app.errorhandler(400)
+def bad_request(e):    return jsonify(error=str(e)), 400
+
+@app.errorhandler(413)
+def too_large(e):      return jsonify(error="File too large. Max 50MB."), 413
+
+@app.errorhandler(500)
+def server_error(e):   return jsonify(error=f"Internal server error: {e}"), 500
+
 PDF_WORDLIST = "/tmp/pdf_dates_wordlist.txt"
 ALLOWED_EXTENSIONS = {'pdf'}
 
