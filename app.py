@@ -14,6 +14,7 @@ import queue
 import time
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 from datetime import date, timedelta
@@ -239,7 +240,7 @@ def pdfunlock():
 
         # Check system tools
         for tool in ("pdfcrack", "qpdf"):
-            if subprocess.run(["which", tool], capture_output=True).returncode != 0:
+            if shutil.which(tool) is None:
                 return jsonify({"error": f"Server missing tool: {tool}. Run: sudo apt install pdfcrack qpdf"}), 500
 
         with tempfile.TemporaryDirectory() as tmpdir:
