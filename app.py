@@ -3,6 +3,7 @@ CTF Recon Tool - Flask Web App
 """
 
 from flask import Flask, render_template, request, jsonify, stream_with_context, Response, send_file
+import io
 import socket
 import concurrent.futures
 import json
@@ -270,12 +271,18 @@ def pdfunlock():
         if dec.returncode != 0:
             return jsonify({"error": f"Found password '{password}' but decryption failed."}), 500
 
-        return send_file(
-            output_path,
-            as_attachment=True,
-            download_name=f"{base}_unlocked{ext}",
-            mimetype="application/pdf"
-        )
+        # Read bytes into memory BEFORE tempdir is deleted
+        with open(output_path, 'rb') as pdf_file:
+            pdf_bytes = io.BytesIO(pdf_file.read())
+
+    # tempdir is now cleaned up — serve from memory
+    pdf_bytes.seek(0)
+    return send_file(
+        pdf_bytes,
+        as_attachment=True,
+        download_name=f"{base}_unlocked{ext}",
+        mimetype="application/pdf"
+    )
 
 # ─── Run ──────────────────────────────────────────────────────────────────────
 
