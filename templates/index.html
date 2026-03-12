@@ -213,6 +213,34 @@
 
   input::placeholder { color: rgba(0,255,65,0.25); }
 
+  /* File upload */
+  .file-upload-label {
+    display: block;
+    width: 100%;
+    padding: 28px 14px;
+    border: 1px dashed var(--border);
+    background: rgba(0,255,65,0.02);
+    color: var(--green-dim);
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    letter-spacing: 1px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 4px;
+  }
+  .file-upload-label:hover {
+    border-color: var(--green);
+    background: rgba(0,255,65,0.06);
+    color: var(--green);
+  }
+  .file-upload-label.has-file {
+    border-color: var(--green);
+    color: var(--green);
+    text-shadow: 0 0 8px var(--green);
+  }
+  input[type="file"] { display: none; }
+
   .port-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
   /* ── Button ── */
@@ -406,6 +434,7 @@
     <button class="tab" onclick="switchTab('subdomain')"><span class="tab-icon">◈</span>SUBDOMAIN</button>
     <button class="tab" onclick="switchTab('whois')"><span class="tab-icon">◎</span>WHOIS</button>
     <button class="tab" onclick="switchTab('dirbrute')"><span class="tab-icon">▦</span>DIR BRUTE</button>
+    <button class="tab" onclick="switchTab('pdfunlock')"><span class="tab-icon">🔓</span>PDF UNLOCK</button>
   </div>
 
   <!-- PORT SCAN -->
@@ -509,6 +538,33 @@
           <span>terminal — ctfrecon</span>
         </div>
         <span class="line dim">// Awaiting URL...</span>
+        <span class="line cursor"> </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PDF UNLOCK -->
+  <div id="tab-pdfunlock" class="panel">
+    <div class="card">
+      <div class="card-title">🔓 PDF Unlocker</div>
+      <div class="field">
+        <label>Upload Encrypted PDF</label>
+        <label class="file-upload-label" id="pdf-label" for="pdf-file">
+          📄 Click to select a PDF file
+        </label>
+        <input type="file" id="pdf-file" accept=".pdf" onchange="onPdfSelect(this)" />
+      </div>
+      <button class="btn" id="pdf-btn" onclick="runPdfUnlock()"><span>▶ UNLOCK PDF</span></button>
+      <div class="loader" id="pdf-loader"><span class="spinner"></span> CRACKING PASSWORD...</div>
+    </div>
+    <div class="card">
+      <div class="card-title">// OUTPUT STREAM</div>
+      <div class="terminal" id="pdf-output">
+        <div class="terminal-header">
+          <div class="t-dot t-red"></div><div class="t-dot t-yellow"></div><div class="t-dot t-green-d"></div>
+          <span>terminal — ctfrecon</span>
+        </div>
+        <span class="line dim">// Upload a password-protected PDF...</span>
         <span class="line cursor"> </span>
       </div>
     </div>
@@ -731,7 +787,71 @@ document.addEventListener('keydown', e => {
   else if (active === 'tab-subdomain') runSubdomain();
   else if (active === 'tab-whois') runWhois();
   else if (active === 'tab-dirbrute') runDirBrute();
+  else if (active === 'tab-pdfunlock') runPdfUnlock();
 });
+
+// ── PDF Unlock ────────────────────────────────────────────────────────────────
+function onPdfSelect(input) {
+  const label = document.getElementById('pdf-label');
+  if (input.files && input.files[0]) {
+    label.textContent = `📄 ${input.files[0].name} (${(input.files[0].size/1024).toFixed(1)} KB)`;
+    label.classList.add('has-file');
+  } else {
+    label.textContent = '📄 Click to select a PDF file';
+    label.classList.remove('has-file');
+  }
+}
+
+async function runPdfUnlock() {
+  const fileInput = document.getElementById('pdf-file');
+  if (!fileInput.files || !fileInput.files[0]) {
+    alert('Please select a PDF file first!'); return;
+  }
+
+  const file = fileInput.files[0];
+  clearTerminal('pdf-output');
+  setLoading('pdf', true);
+  appendLine('pdf-output', `[*] File      : ${file.name}`, 'info');
+  appendLine('pdf-output', `[*] Size      : ${(file.size/1024).toFixed(1)} KB`, 'info');
+  appendLine('pdf-output', `[*] Strategy  : DDMMYYYY date brute-force (120 years)`, 'dim');
+  appendLine('pdf-output', `[*] Running pdfcrack... (may take 1-3 min)`, 'dim');
+  appendLine('pdf-output', ``, '');
+
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const res = await fetch('/api/pdfunlock', {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!res.ok) {
+      const data = await res.json();
+      appendLine('pdf-output', `[-] ERROR: ${data.error}`, 'error');
+      return;
+    }
+
+    // Trigger download
+    const blob = await res.blob();
+    const base = file.name.replace(/\.pdf$/i, '');
+    const dlName = `${base}_unlocked.pdf`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = dlName; a.click();
+    URL.revokeObjectURL(url);
+
+    appendLine('pdf-output', `[+] Password cracked successfully!`, 'success');
+    appendLine('pdf-output', `[+] Unlocked PDF downloading as: ${dlName}`, 'success');
+    appendLine('pdf-output', ``, '');
+    appendLine('pdf-output', `[*] Done. The decrypted PDF has been saved to your device.`, 'info');
+
+  } catch(e) {
+    appendLine('pdf-output', `[-] Request failed: ${e.message}`, 'error');
+  } finally {
+    setLoading('pdf', false);
+  }
+}
 </script>
 </body>
 </html>

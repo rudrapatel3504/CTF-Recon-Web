@@ -2,7 +2,7 @@
 CTF Recon Tool - Flask Web App
 """
 
-from flask import Flask, render_template, request, jsonify, stream_with_context, Response
+from flask import Flask, render_template, request, jsonify, stream_with_context, Response, send_file
 import socket
 import concurrent.futures
 import json
@@ -11,8 +11,21 @@ import urllib.error
 import threading
 import queue
 import time
+import os
+import re
+import subprocess
+import tempfile
+from datetime import date, timedelta
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB max upload
+
+PDF_WORDLIST = "/tmp/pdf_dates_wordlist.txt"
+ALLOWED_EXTENSIONS = {'pdf'}
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -187,6 +200,72 @@ def dirbrute():
     found = [r for r in results if r]
 
     return jsonify({"url": url, "found": found})
+
+# ── PDF Unlocker ──────────────────────────────────────────────────────────────
+
+def _build_pdf_wordlist():
+    if os.path.exists(PDF_WORDLIST):
+        return PDF_WORDLIST
+    end_date = date.today()
+    start_date = end_date - timedelta(days=120 * 365 + 30)
+    with open(PDF_WORDLIST, "w") as f:
+        cur = end_date
+        while cur >= start_date:
+            f.write(cur.strftime("%d%m%Y") + "\n")
+            cur -= timedelta(days=1)
+    return PDF_WORDLIST
+
+
+@app.route("/api/pdfunlock", methods=["POST"])
+def pdfunlock():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+
+    f = request.files['file']
+    if not f or not allowed_file(f.filename):
+        return jsonify({"error": "Please upload a valid PDF file"}), 400
+
+    # Check system tools
+    for tool in ("pdfcrack", "qpdf"):
+        if subprocess.run(["which", tool], capture_output=True).returncode != 0:
+            return jsonify({"error": f"Server missing tool: {tool}. Run: sudo apt install pdfcrack qpdf"}), 500
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        filename   = secure_filename(f.filename)
+        input_path = os.path.join(tmpdir, filename)
+        base, ext  = os.path.splitext(filename)
+        output_path = os.path.join(tmpdir, f"{base}_unlocked{ext}")
+
+        f.save(input_path)
+
+        # Build date wordlist
+        wordlist = _build_pdf_wordlist()
+
+        # Run pdfcrack
+        result = subprocess.run(
+            ["pdfcrack", "-f", input_path, "-w", wordlist],
+            capture_output=True, text=True, timeout=300
+        )
+        match = re.search(r"found user-password:\s*'([^']*)'" , result.stdout)
+        if not match:
+            return jsonify({"error": "Password not found. Not a DDMMYYYY date in the last 120 years."}), 422
+
+        password = match.group(1)
+
+        # Decrypt with qpdf
+        dec = subprocess.run(
+            ["qpdf", f"--password={password}", "--decrypt", input_path, output_path],
+            capture_output=True, text=True
+        )
+        if dec.returncode != 0:
+            return jsonify({"error": f"Found password '{password}' but decryption failed."}), 500
+
+        return send_file(
+            output_path,
+            as_attachment=True,
+            download_name=f"{base}_unlocked{ext}",
+            mimetype="application/pdf"
+        )
 
 # ─── Run ──────────────────────────────────────────────────────────────────────
 
