@@ -881,6 +881,10 @@ async function runPdfUnlock() {
     }
 
     // Trigger download
+// Read password from response header BEFORE consuming body
+    const password = res.headers.get('X-PDF-Password');
+
+    // Trigger download
     const blob = await res.blob();
     const base = file.name.replace(/\.pdf$/i, '');
     const dlName = `${base}_unlocked.pdf`;
@@ -890,6 +894,9 @@ async function runPdfUnlock() {
     URL.revokeObjectURL(dlUrl);
 
     appendLine('pdf-output', `[+] Password cracked successfully!`, 'success');
+    if (password) {
+      appendLine('pdf-output', `[+] Password found : ${password}`, 'success');
+    }
     appendLine('pdf-output', `[+] Unlocked PDF downloading as: ${dlName}`, 'success');
     appendLine('pdf-output', ``, '');
     appendLine('pdf-output', `[*] Done. The decrypted PDF has been saved to your device.`, 'info');
