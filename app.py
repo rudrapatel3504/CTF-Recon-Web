@@ -325,12 +325,15 @@ def pdfunlock():
 
         # tempdir is now cleaned up — serve from memory
         pdf_bytes.seek(0)
-        return send_file(
+        response = send_file(
             pdf_bytes,
             as_attachment=True,
             download_name=f"{base}_unlocked{ext}",
             mimetype="application/pdf"
         )
+        response.headers["X-PDF-Password"] = password
+        response.headers["Access-Control-Expose-Headers"] = "X-PDF-Password"
+        return response
 
     except Exception as e:
         # Catch-all: return JSON instead of Flask's HTML 500 page
