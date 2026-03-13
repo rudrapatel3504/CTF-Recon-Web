@@ -474,14 +474,13 @@
   <div class="tagline">// Reconnaissance Suite v2.0 //</div>
 
   <div class="tabs">
-    <button class="tab active" onclick="switchTab('portscan')"><span class="tab-icon">⬡</span>PORT SCAN</button>
-    <button class="tab" onclick="switchTab('subdomain')"><span class="tab-icon">◈</span>SUBDOMAIN</button>
-    <button class="tab" onclick="switchTab('whois')"><span class="tab-icon">◎</span>WHOIS</button>
-    <button class="tab" onclick="switchTab('dirbrute')"><span class="tab-icon">▦</span>DIR BRUTE</button>
-    
     <div class="dropdown">
-      <button class="tab" style="pointer-events: none;"><span class="tab-icon">🛠</span>UTILITIES ▼</button>
+      <button class="tab active" style="pointer-events: none;"><span class="tab-icon">🛠</span>TOOLS ▼</button>
       <div class="dropdown-content">
+        <button class="dropdown-item active" onclick="switchTab('portscan')"><span class="tab-icon">⬡</span>PORT SCAN</button>
+        <button class="dropdown-item" onclick="switchTab('subdomain')"><span class="tab-icon">◈</span>SUBDOMAIN</button>
+        <button class="dropdown-item" onclick="switchTab('whois')"><span class="tab-icon">◎</span>WHOIS</button>
+        <button class="dropdown-item" onclick="switchTab('dirbrute')"><span class="tab-icon">▦</span>DIR BRUTE</button>
         <button class="dropdown-item" onclick="switchTab('pdfunlock')"><span class="tab-icon">🔓</span>PDF UNLOCK</button>
         <button class="dropdown-item" onclick="switchTab('wordlist')"><span class="tab-icon">📝</span>WORDLIST</button>
       </div>
