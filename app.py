@@ -339,6 +339,71 @@ def pdfunlock():
         # Catch-all: return JSON instead of Flask's HTML 500 page
         return jsonify({"error": f"Unexpected server error: {str(e)}"}), 500
 
+# ── Wordlist Generator ──────────────────────────────────────────────────────────
+
+from CTF_Recon.generator import generate, validate_names
+
+@app.route("/api/wordlist", methods=["POST"])
+def generate_wordlist():
+    try:
+        data = request.json or request.form
+        
+        # 1. Extract inputs
+        name1 = data.get("name1", "").strip().lower()
+        if not name1:
+            return jsonify({"error": "First name is required."}), 400
+            
+        name2 = data.get("name2", "").strip().lower()
+        names = [name1]
+        if name2:
+            names.append(name2)
+            
+        # Validate names
+        errors = validate_names(names)
+        if errors:
+            return jsonify({"error": " ".join(errors)}), 400
+            
+        # 2. Extract years
+        try:
+            year_from = int(data.get("year_from", 1980))
+            year_to = int(data.get("year_to", 2010))
+        except ValueError:
+            return jsonify({"error": "Years must be integers."}), 400
+            
+        if year_from > year_to:
+            return jsonify({"error": "Year FROM must be <= Year TO."}), 400
+        if not (1900 <= year_from <= 2099) or not (1900 <= year_to <= 2099):
+            return jsonify({"error": "Years must be between 1900 and 2099."}), 400
+            
+        # 3. Extract brute force flag
+        include_brute = str(data.get("include_brute", "true")).lower() == "true"
+        
+        # 4. Generate wordlist
+        words = generate(names, year_from, year_to, include_brute=include_brute)
+        
+        # 5. Return as a downloadable text file
+        output_name = "_".join(names) + "_wordlist.txt"
+        file_content = "\n".join(words) + "\n"
+        
+        # Create an in-memory file
+        mem_file = io.BytesIO()
+        mem_file.write(file_content.encode('utf-8'))
+        mem_file.seek(0)
+        
+        response = send_file(
+            mem_file,
+            as_attachment=True,
+            download_name=output_name,
+            mimetype="text/plain"
+        )
+        # Expose custom headers so the frontend can read metadata
+        response.headers["X-Word-Count"] = len(words)
+        response.headers["Access-Control-Expose-Headers"] = "X-Word-Count"
+        return response
+        
+    except Exception as e:
+        return jsonify({"error": f"Unexpected server error: {str(e)}"}), 500
+
 # ─── Run ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

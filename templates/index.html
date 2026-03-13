@@ -435,6 +435,7 @@
     <button class="tab" onclick="switchTab('whois')"><span class="tab-icon">◎</span>WHOIS</button>
     <button class="tab" onclick="switchTab('dirbrute')"><span class="tab-icon">▦</span>DIR BRUTE</button>
     <button class="tab" onclick="switchTab('pdfunlock')"><span class="tab-icon">🔓</span>PDF UNLOCK</button>
+    <button class="tab" onclick="switchTab('wordlist')"><span class="tab-icon">📝</span>WORDLIST</button>
   </div>
 
   <!-- PORT SCAN -->
@@ -580,6 +581,55 @@
           <span>terminal — ctfrecon</span>
         </div>
         <span class="line dim">// Upload a password-protected PDF...</span>
+        <span class="line cursor"> </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- WORDLIST GENERATOR -->
+  <div id="tab-wordlist" class="panel">
+    <div class="card">
+      <div class="card-title">📝 Targeted Wordlist Generator</div>
+      
+      <div class="field">
+        <label>Primary Target Name (Required)</label>
+        <input type="text" id="wl-name1" placeholder="e.g. admin (lowercase only)" />
+      </div>
+      
+      <div class="field">
+        <label>Secondary Target Name (Optional)</label>
+        <input type="text" id="wl-name2" placeholder="e.g. system (lowercase only)" />
+      </div>
+
+      <div class="field port-row">
+        <div>
+          <label>Year From</label>
+          <input type="number" id="wl-year-from" value="1980" min="1900" max="2099"/>
+        </div>
+        <div>
+          <label>Year To</label>
+          <input type="number" id="wl-year-to" value="2010" min="1900" max="2099"/>
+        </div>
+      </div>
+      
+      <div class="field">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; text-transform:none;">
+          <input type="checkbox" id="wl-brute" checked style="width:16px; height:16px;" />
+          <span style="font-size: 0.75rem; letter-spacing: 1px; color: var(--green-dim); text-transform:uppercase;">Include Brute Force (0000-9999)</span>
+        </label>
+      </div>
+
+      <button class="btn" id="wl-btn" onclick="runWordlistGenerator()"><span>▶ GENERATE WORDLIST</span></button>
+      <div class="loader" id="wl-loader"><span class="spinner"></span> GENERATING...</div>
+    </div>
+    <div class="card">
+      <div class="card-title">// OUTPUT STREAM</div>
+      <div class="terminal" id="wl-output">
+        <div class="terminal-header">
+          <div class="t-dot t-red"></div><div class="t-dot t-yellow"></div><div class="t-dot t-green-d"></div>
+          <span>terminal — ctfrecon</span>
+        </div>
+        <span class="line dim">// Enter target details...</span>
         <span class="line cursor"> </span>
       </div>
     </div>
@@ -817,6 +867,7 @@ document.addEventListener('keydown', e => {
   else if (active === 'tab-whois') runWhois();
   else if (active === 'tab-dirbrute') runDirBrute();
   else if (active === 'tab-pdfunlock') runPdfUnlock();
+  else if (active === 'tab-wordlist') runWordlistGenerator();
 });
 
 // ── Wordlist file select handler ──────────────────────────────────────────────
@@ -905,6 +956,83 @@ async function runPdfUnlock() {
     appendLine('pdf-output', `[-] Request failed: ${e.message}`, 'error');
   } finally {
     setLoading('pdf', false);
+  }
+}
+
+// ── Wordlist Generator ────────────────────────────────────────────────────────
+async function runWordlistGenerator() {
+  const name1 = document.getElementById('wl-name1').value.trim();
+  const name2 = document.getElementById('wl-name2').value.trim();
+  const yearFrom = document.getElementById('wl-year-from').value;
+  const yearTo = document.getElementById('wl-year-to').value;
+  const brute = document.getElementById('wl-brute').checked;
+
+  if (!name1) { alert('Primary target name is required!'); return; }
+
+  clearTerminal('wl-output');
+  setLoading('wl', true);
+  
+  const namesDisplay = name2 ? `${name1}, ${name2}` : name1;
+  appendLine('wl-output', `[*] Targets   : ${namesDisplay}`, 'info');
+  appendLine('wl-output', `[*] Years     : ${yearFrom} -> ${yearTo}`, 'info');
+  appendLine('wl-output', `[*] Brute 4-D : ${brute ? 'yes' : 'no'}`, 'info');
+  appendLine('wl-output', `[*] Generating permutations...`, 'dim');
+  appendLine('wl-output', ``, '');
+
+  try {
+    const payload = {
+      name1: name1,
+      name2: name2,
+      year_from: parseInt(yearFrom),
+      year_to: parseInt(yearTo),
+      include_brute: brute
+    };
+
+    const res = await fetch('/api/wordlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+      let errMsg = `Server error (HTTP ${res.status})`;
+      try {
+        const data = await res.json();
+        if (data.error) errMsg = data.error;
+      } catch (_) {}
+      appendLine('wl-output', `[-] ERROR: ${errMsg}`, 'error');
+      return;
+    }
+
+    const wordCount = res.headers.get('X-Word-Count') || 'unknown';
+    
+    // Trigger download
+    const blob = await res.blob();
+    // try to get filename from content-disposition if possible
+    let filename = `${name1}_wordlist.txt`;
+    const cd = res.headers.get('Content-Disposition');
+    if (cd && cd.includes('filename=')) {
+        const matches = /filename="([^"]+)"/.exec(cd) || /filename=([^;]+)/.exec(cd);
+        if (matches != null && matches[1]) {
+            filename = matches[1];
+        }
+    }
+
+    const dlUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = dlUrl; a.download = filename; a.click();
+    URL.revokeObjectURL(dlUrl);
+
+    appendLine('wl-output', `[+] Wordlist generated successfully!`, 'success');
+    appendLine('wl-output', `[+] Total words : ${parseInt(wordCount).toLocaleString()}`, 'success');
+    appendLine('wl-output', `[+] File saved  : ${filename}`, 'success');
+    appendLine('wl-output', ``, '');
+    appendLine('wl-output', `[*] Done. Wordlist downloaded to your device.`, 'info');
+
+  } catch(e) {
+    appendLine('wl-output', `[-] Request failed: ${e.message}`, 'error');
+  } finally {
+    setLoading('wl', false);
   }
 }
 </script>
