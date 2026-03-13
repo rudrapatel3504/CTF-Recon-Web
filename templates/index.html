@@ -145,6 +145,50 @@
 
   .tab-icon { margin-right: 8px; }
 
+  /* ── Dropdown ── */
+  .dropdown {
+    position: relative;
+    display: inline-block;
+  }
+  .dropdown-content {
+    display: none;
+    position: absolute;
+    background-color: var(--bg2);
+    min-width: 180px;
+    border: 1px solid var(--border);
+    border-top: none;
+    z-index: 1000;
+    top: 100%;
+    left: 0;
+  }
+  .dropdown:hover .dropdown-content {
+    display: block;
+  }
+  .dropdown-item {
+    display: block;
+    width: 100%;
+    padding: 12px 24px;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    letter-spacing: 2px;
+    background: transparent;
+    border: none;
+    color: var(--green-dim);
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+  .dropdown-item:hover {
+    color: var(--green);
+    background: rgba(0,255,65,0.08);
+  }
+  .dropdown-item.active {
+    color: var(--green);
+    background: var(--green-faint);
+    text-shadow: 0 0 10px var(--green);
+  }
+
   /* ── Panel ── */
   .panel { display: none; }
   .panel.active { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
@@ -434,8 +478,14 @@
     <button class="tab" onclick="switchTab('subdomain')"><span class="tab-icon">◈</span>SUBDOMAIN</button>
     <button class="tab" onclick="switchTab('whois')"><span class="tab-icon">◎</span>WHOIS</button>
     <button class="tab" onclick="switchTab('dirbrute')"><span class="tab-icon">▦</span>DIR BRUTE</button>
-    <button class="tab" onclick="switchTab('pdfunlock')"><span class="tab-icon">🔓</span>PDF UNLOCK</button>
-    <button class="tab" onclick="switchTab('wordlist')"><span class="tab-icon">📝</span>WORDLIST</button>
+    
+    <div class="dropdown">
+      <button class="tab" style="pointer-events: none;"><span class="tab-icon">🛠</span>UTILITIES ▼</button>
+      <div class="dropdown-content">
+        <button class="dropdown-item" onclick="switchTab('pdfunlock')"><span class="tab-icon">🔓</span>PDF UNLOCK</button>
+        <button class="dropdown-item" onclick="switchTab('wordlist')"><span class="tab-icon">📝</span>WORDLIST</button>
+      </div>
+    </div>
   </div>
 
   <!-- PORT SCAN -->
@@ -646,9 +696,18 @@ setInterval(updateClock, 1000); updateClock();
 
 // ── Tabs ─────────────────────────────────────────────────────────────────────
 function switchTab(name) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab, .dropdown-item').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-  event.currentTarget.classList.add('active');
+  
+  if (window.event && window.event.currentTarget) {
+    let target = window.event.currentTarget;
+    target.classList.add('active');
+    if (target.classList.contains('dropdown-item')) {
+      let dropdown = target.closest('.dropdown');
+      if (dropdown) dropdown.querySelector('.tab').classList.add('active');
+    }
+  }
+  
   document.getElementById('tab-' + name).classList.add('active');
 }
 
