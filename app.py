@@ -339,6 +339,37 @@ def pdfunlock():
         # Catch-all: return JSON instead of Flask's HTML 500 page
         return jsonify({"error": f"Unexpected server error: {str(e)}"}), 500
 
+# ── Full Recon PDF PDF Generator ──────────────────────────────────────────────
+
+from CTF_Recon.report_generator import generate_pdf_report
+
+@app.route("/api/fullrecon/pdf", methods=["POST"])
+def fullrecon_pdf():
+    try:
+        report_data = request.json
+        if not report_data:
+            return jsonify({"error": "No report data provided"}), 400
+            
+        target = report_data.get("target", "target")
+        safe_target = target.replace(".", "_")
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pdf_path = os.path.join(tmpdir, "report.pdf")
+            generate_pdf_report(report_data, pdf_path)
+            
+            with open(pdf_path, 'rb') as f:
+                pdf_bytes = io.BytesIO(f.read())
+                
+        pdf_bytes.seek(0)
+        return send_file(
+            pdf_bytes,
+            as_attachment=True,
+            download_name=f"full_recon_report_{safe_target}.pdf",
+            mimetype="application/pdf"
+        )
+    except Exception as e:
+        return jsonify({"error": f"Failed to generate PDF: {str(e)}"}), 500
+
 # ── Wordlist Generator ──────────────────────────────────────────────────────────
 
 from CTF_Recon.generator import generate, validate_names

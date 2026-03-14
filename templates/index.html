@@ -852,13 +852,40 @@ async function runFullRecon() {
   setLoading('fr', false);
 }
 
-function downloadFullReport() {
+async function downloadFullReport() {
   if (!lastFullReport) return;
-  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(lastFullReport, null, 2));
-  const el = document.createElement('a');
-  el.setAttribute("href", dataStr);
-  el.setAttribute("download", `full_recon_report_${lastFullTarget.replace(/\./g, '_')}.json`);
-  el.click();
+  
+  const btn = document.getElementById('fr-download-btn');
+  const originalText = btn.innerHTML;
+  btn.innerHTML = '<span>⏳ GENERATING PDF...</span>';
+  btn.disabled = true;
+
+  try {
+    const response = await fetch('/api/fullrecon/pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(lastFullReport)
+    });
+    
+    if (!response.ok) throw new Error("Failed to generate PDF");
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    
+    const el = document.createElement('a');
+    el.href = url;
+    el.download = `full_recon_report_${lastFullTarget.replace(/\./g, '_')}.pdf`;
+    document.body.appendChild(el);
+    el.click();
+    document.body.removeChild(el);
+    window.URL.revokeObjectURL(url);
+    
+  } catch (e) {
+    alert("Error generating PDF report: " + e.message);
+  } finally {
+    btn.innerHTML = originalText;
+    btn.disabled = false;
+  }
 }
 
 // ── Port Scan ─────────────────────────────────────────────────────────────────
