@@ -137,8 +137,12 @@ def generate_pdf_report(report_dict, output_path):
 
         pdf.set_font('helvetica', '', 11)
         for sd in sds:
-            sub = str(sd[0])[:50]
-            ip = str(sd[1])[:30]
+            if isinstance(sd, dict):
+                sub = str(sd.get("subdomain", ""))[:50]
+                ip  = str(sd.get("ip", ""))[:30]
+            else:
+                sub = str(sd[0])[:50]
+                ip  = str(sd[1])[:30]
             pdf.cell(100, 8, sub, border=1)
             pdf.cell(60, 8, ip, border=1)
             pdf.ln()
