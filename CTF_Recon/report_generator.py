@@ -1,3 +1,4 @@
+import textwrap
 from fpdf import FPDF
 from datetime import datetime
 
@@ -29,6 +30,35 @@ class ReconPDF(FPDF):
         self.multi_cell(0, 6, body)
         self.ln(4)
 
+def force_wrap(text, width=70):
+    """
+    Forcefully wraps text to a specific width, even if there are no spaces.
+    This prevents FPDF from throwing "Not enough horizontal space" errors.
+    """
+    text = str(text).replace('\r', '')
+    lines = text.split('\n')
+    wrapped_lines = []
+    for line in lines:
+        if not line:
+            wrapped_lines.append('')
+            continue
+        
+        # Manually chunk the line into 'width' character pieces if no spaces are found
+        # to ensure it fits in a cell.
+        chunks = []
+        words = line.split(' ')
+        for word in words:
+            if len(word) > width:
+                # Chunk long contiguous string
+                for i in range(0, len(word), width):
+                    chunks.append(word[i:i+width])
+            else:
+                chunks.append(word)
+        
+        rejoined = ' '.join(chunks)
+        wrapped_lines.extend(textwrap.wrap(rejoined, width))
+        
+    return '\n'.join(wrapped_lines)
 
 def generate_pdf_report(report_dict, output_path):
     """
@@ -111,44 +141,24 @@ def generate_pdf_report(report_dict, output_path):
         pdf.set_font('helvetica', '', 9)
         for k, v in wd.items():
             if v:
-                import textwrap
-                def force_wrap(text, width=60):
-                    text = str(text)
-                    lines = text.split('\n')
-                    wrapped_lines = []
-                    for line in lines:
-                        if not line:
-                            wrapped_lines.append('')
-                            continue
-                        chunks = []
                 if isinstance(v, list):
                     v = ", ".join([str(item) for item in v])
                 elif isinstance(v, dict):
                     v = str(v)
-                    
-                val_str = str(v).replace('\r', '')
-                if len(val_str) > 500:
-                    val_str = val_str[:500] + "..."
+                
+                # Use our robust wrapper
+                val_str = force_wrap(v, 75)
+                if len(val_str) > 2000:
+                    val_str = val_str[:2000] + "..."
                     
                 pdf.cell(40, 6, str(k) + ":")
-                # Print the lines one by one to avoid multi_cell crashing
-                split_lines = val_str.split('\n')
-                if split_lines:
-                    # Manually chunk the first line to max 60 chars
-                    first = split_lines[0]
-                    first_chunks = [first[i:i+60] for i in range(0, len(first), 60)]
-                    pdf.cell(0, 6, first_chunks[0], ln=True)
-                    for chunk in first_chunks[1:]:
+                # Indent subsequent lines if any
+                first = True
+                for line in val_str.split('\n'):
+                    if not first:
                         pdf.cell(40, 6, "")
-                        pdf.cell(0, 6, chunk, ln=True)
-                        
-                    for l in split_lines[1:]:
-                        chunks = [l[i:i+60] for i in range(0, len(l), 60)]
-                        for chunk in chunks:
-                            pdf.cell(40, 6, "") # Indent
-                            pdf.cell(0, 6, chunk, ln=True)
-                else:
-                    pdf.ln()
+                    pdf.cell(0, 6, line, ln=True)
+                    first = False
         pdf.ln(4)
         
     if not geo and not wd:
