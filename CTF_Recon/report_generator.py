@@ -145,9 +145,10 @@ def generate_pdf_report(report_dict, output_path):
     pdf.ln(8)
 
     # ----- 3. WHOIS / Geo -----
+    # The web API returns keys "geo" and "whois"; CLI stores as "geo_data"/"whois_data"
     whois_dict = report_dict.get("whois", {}) or {}
-    geo = whois_dict.get("geo_data", {}) or {}
-    wd = whois_dict.get("whois_data", {}) or {}
+    geo = whois_dict.get("geo") or whois_dict.get("geo_data") or {}
+    wd  = whois_dict.get("whois") or whois_dict.get("whois_data") or {}
 
     pdf.add_page()
     pdf.chapter_title("3. Target Geolocation & WHOIS")
