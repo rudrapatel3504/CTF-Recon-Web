@@ -477,7 +477,8 @@
     <div class="dropdown">
       <button class="tab active" style="pointer-events: none;"><span class="tab-icon">🛠</span>TOOLS ▼</button>
       <div class="dropdown-content">
-        <button class="dropdown-item active" onclick="switchTab('portscan')"><span class="tab-icon">⬡</span>PORT SCAN</button>
+        <button class="dropdown-item active" onclick="switchTab('fullrecon')"><span class="tab-icon">⚡</span>FULL RECON</button>
+        <button class="dropdown-item" onclick="switchTab('portscan')"><span class="tab-icon">⬡</span>PORT SCAN</button>
         <button class="dropdown-item" onclick="switchTab('subdomain')"><span class="tab-icon">◈</span>SUBDOMAIN</button>
         <button class="dropdown-item" onclick="switchTab('whois')"><span class="tab-icon">◎</span>WHOIS</button>
         <button class="dropdown-item" onclick="switchTab('dirbrute')"><span class="tab-icon">▦</span>DIR BRUTE</button>
@@ -487,8 +488,37 @@
     </div>
   </div>
 
+  <!-- FULL RECON -->
+  <div id="tab-fullrecon" class="panel active">
+    <div class="card">
+      <div class="card-title">⚡ Full Automated Recon</div>
+      <div class="field">
+        <label>Target Domain / URL</label>
+        <input type="text" id="fr-target" placeholder="e.g. example.com or http://testphp.vulnweb.com" />
+      </div>
+      <button class="btn" id="fr-btn" onclick="runFullRecon()"><span>▶ LAUNCH FULL SCAN</span></button>
+      <div class="loader" id="fr-loader"><span class="spinner"></span> ORCHESTRATING SCANS...</div>
+      
+      <div class="field" style="margin-top: 20px;">
+        <label style="color:var(--cyan); font-size:0.65rem;">NOTE: This will trigger Port Scan, Subdomain Enum, WHOIS, and Dir Brute-force simultaneously.</label>
+      </div>
+      <button class="btn" id="fr-download-btn" onclick="downloadFullReport()" style="display:none; border-color:var(--cyan); color:var(--cyan);"><span>📥 DOWNLOAD REPORT</span></button>
+    </div>
+    <div class="card">
+      <div class="card-title">// UNIFIED OUTPUT STREAM</div>
+      <div class="terminal" id="fr-output">
+        <div class="terminal-header">
+          <div class="t-dot t-red"></div><div class="t-dot t-yellow"></div><div class="t-dot t-green-d"></div>
+          <span>terminal — fullrecon</span>
+        </div>
+        <span class="line dim">// Awaiting target...</span>
+        <span class="line cursor"> </span>
+      </div>
+    </div>
+  </div>
+
   <!-- PORT SCAN -->
-  <div id="tab-portscan" class="panel active">
+  <div id="tab-portscan" class="panel">
     <div class="card">
       <div class="card-title">⬡ Port Scanner</div>
       <div class="field">
@@ -731,6 +761,104 @@ function appendLine(id, text, cls='') {
 function setLoading(prefix, on) {
   document.getElementById(prefix+'-btn').disabled = on;
   document.getElementById(prefix+'-loader').classList.toggle('active', on);
+}
+
+// ── Full Automated Recon ──────────────────────────────────────────────────────
+let lastFullReport = null;
+let lastFullTarget = "";
+
+async function runFullRecon() {
+  const targetInput = document.getElementById('fr-target').value.trim();
+  if (!targetInput) { alert('Enter a target domain or URL!'); return; }
+  
+  // Clean target to a base domain for the network scans, but keep original for dirbrute
+  const cleanTarget = targetInput.replace(/^https?:\/\//, '').split('/')[0];
+  const urlTarget = targetInput.startsWith('http') ? targetInput : `http://${cleanTarget}`;
+
+  clearTerminal('fr-output');
+  setLoading('fr', true);
+  document.getElementById('fr-download-btn').style.display = 'none';
+  
+  appendLine('fr-output', `[*] Full Recon Target: ${cleanTarget}`, 'info');
+  appendLine('fr-output', `[*] Web Target       : ${urlTarget}`, 'info');
+  appendLine('fr-output', `[*] Orchestrating concurrent scans...`, 'dim');
+  appendLine('fr-output', ``, '');
+
+  lastFullReport = { target: cleanTarget };
+  lastFullTarget = cleanTarget;
+
+  // Prepare Promises
+  const psPromise = fetch('/api/portscan', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({target: cleanTarget, start: 1, end: 1024})
+  }).then(r => r.json()).catch(e => ({error: e.message}));
+
+  const sdPromise = fetch('/api/subdomain', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({domain: cleanTarget})
+  }).then(r => r.json()).catch(e => ({error: e.message}));
+
+  const whPromise = fetch('/api/whois', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({target: cleanTarget})
+  }).then(r => r.json()).catch(e => ({error: e.message}));
+
+  const dbPromise = fetch('/api/dirbrute', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({url: urlTarget})
+  }).then(r => r.json()).catch(e => ({error: e.message}));
+
+  // Wait for all to finish concurrently
+  const startTime = Date.now();
+  const [ps, sd, wh, db] = await Promise.all([psPromise, sdPromise, whPromise, dbPromise]);
+  const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+
+  // Print Summary
+  appendLine('fr-output', `[*] All scans completed in ${duration}s.`, 'info');
+  appendLine('fr-output', ``, '');
+  appendLine('fr-output', `── RECON SUMMARY ────────────`, 'header');
+  
+  if (ps.error) appendLine('fr-output', `[-] Port Scan   : ERROR (${ps.error})`, 'error');
+  else {
+    const pCount = ps.open_ports ? ps.open_ports.length : 0;
+    appendLine('fr-output', `[+] Open Ports  : ${pCount} found`, pCount ? 'success' : 'warning');
+    lastFullReport.port_scan = ps.open_ports;
+  }
+
+  if (sd.error) appendLine('fr-output', `[-] Subdomains  : ERROR (${sd.error})`, 'error');
+  else {
+    const sCount = sd.found ? sd.found.length : 0;
+    appendLine('fr-output', `[+] Subdomains  : ${sCount} discovered`, sCount ? 'success' : 'warning');
+    lastFullReport.subdomains = sd.found;
+  }
+
+  if (wh.error) appendLine('fr-output', `[-] WHOIS/Geo   : ERROR (${wh.error})`, 'error');
+  else {
+    const country = wh.geo && wh.geo.country ? wh.geo.country : 'Unknown';
+    appendLine('fr-output', `[+] Geolocation : ${country}`, 'success');
+    lastFullReport.whois = wh;
+  }
+
+  if (db.error) appendLine('fr-output', `[-] Directories : ERROR (${db.error})`, 'error');
+  else {
+    const dCount = db.found ? db.found.length : 0;
+    appendLine('fr-output', `[+] Directories : ${dCount} paths found`, dCount ? 'success' : 'warning');
+    lastFullReport.directories = db.found;
+  }
+  
+  appendLine('fr-output', `─────────────────────────────`, 'dim');
+  
+  document.getElementById('fr-download-btn').style.display = 'block';
+  setLoading('fr', false);
+}
+
+function downloadFullReport() {
+  if (!lastFullReport) return;
+  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(lastFullReport, null, 2));
+  const el = document.createElement('a');
+  el.setAttribute("href", dataStr);
+  el.setAttribute("download", `full_recon_report_${lastFullTarget.replace(/\./g, '_')}.json`);
+  el.click();
 }
 
 // ── Port Scan ─────────────────────────────────────────────────────────────────
