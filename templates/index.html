@@ -195,8 +195,24 @@
 
   @media (max-width: 768px) {
     .panel.active { grid-template-columns: 1fr; }
-    header { padding: 16px 20px; flex-wrap: wrap; }
-    .logo { font-size: 1.1rem; }
+    header { padding: 16px 20px; flex-wrap: wrap; justify-content: center; text-align: center; }
+    .status-bar { margin-left: 0; width: 100%; justify-content: center; margin-top: 10px; }
+    .logo { font-size: 1.3rem; }
+    
+    .tabs {
+      overflow-x: auto;
+      white-space: nowrap;
+      -webkit-overflow-scrolling: touch;
+      padding-bottom: 5px;
+    }
+    
+    .tabs::-webkit-scrollbar { height: 4px; }
+    .tabs::-webkit-scrollbar-track { background: var(--bg); }
+    .tabs::-webkit-scrollbar-thumb { background: var(--border); }
+    
+    .card { padding: 16px; }
+    
+    .port-row { grid-template-columns: 1fr; }
   }
 
   /* ── Card ── */

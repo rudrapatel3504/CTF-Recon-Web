@@ -2,7 +2,7 @@
 
 A dark hacker-style web interface for the CTF Recon Tool, built with Flask.
 
-Web-App: https://ctf-recon-web.onrender.com/
+Web-App: https://ctf-recon-tool.vercel.app/
 
 ## Features
 - ⚡ **Full Automated Recon:** Runs Port Scan, Subdomain Enum, WHOIS, and Dir Brute-force concurrently
