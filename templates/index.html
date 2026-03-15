@@ -779,6 +779,16 @@ function setLoading(prefix, on) {
 let lastFullReport = null;
 let lastFullTarget = "";
 
+// Helper: fetch with a hard timeout (ms). Returns {error} on timeout/network fail.
+function fetchWithTimeout(url, options, ms = 60000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return fetch(url, { ...options, signal: controller.signal })
+    .then(r => r.json())
+    .catch(e => ({ error: e.name === 'AbortError' ? `Timed out after ${ms/1000}s` : e.message }))
+    .finally(() => clearTimeout(timer));
+}
+
 async function runFullRecon() {
   const targetInput = document.getElementById('fr-target').value.trim();
   if (!targetInput) { alert('Enter a target domain or URL!'); return; }
@@ -793,37 +803,44 @@ async function runFullRecon() {
   
   appendLine('fr-output', `[*] Full Recon Target: ${cleanTarget}`, 'info');
   appendLine('fr-output', `[*] Web Target       : ${urlTarget}`, 'info');
-  appendLine('fr-output', `[*] Orchestrating concurrent scans...`, 'dim');
+  appendLine('fr-output', `[*] Orchestrating concurrent scans... (60s timeout each)`, 'dim');
   appendLine('fr-output', ``, '');
 
   lastFullReport = { target: cleanTarget };
   lastFullTarget = cleanTarget;
 
-  // Prepare Promises
-  const psPromise = fetch('/api/portscan', {
+  // All 4 scans run concurrently with 60-second timeouts
+  const TIMEOUT = 60000;
+  const psPromise = fetchWithTimeout('/api/portscan', {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({target: cleanTarget, start: 1, end: 1024})
-  }).then(r => r.json()).catch(e => ({error: e.message}));
+  }, TIMEOUT);
 
-  const sdPromise = fetch('/api/subdomain', {
+  const sdPromise = fetchWithTimeout('/api/subdomain', {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({domain: cleanTarget})
-  }).then(r => r.json()).catch(e => ({error: e.message}));
+  }, TIMEOUT);
 
-  const whPromise = fetch('/api/whois', {
+  const whPromise = fetchWithTimeout('/api/whois', {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({target: cleanTarget})
-  }).then(r => r.json()).catch(e => ({error: e.message}));
+  }, TIMEOUT);
 
-  const dbPromise = fetch('/api/dirbrute', {
+  const dbPromise = fetchWithTimeout('/api/dirbrute', {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({url: urlTarget})
-  }).then(r => r.json()).catch(e => ({error: e.message}));
+  }, TIMEOUT);
 
-  // Wait for all to finish concurrently
+  // Use allSettled so one hanging scan never blocks the rest
   const startTime = Date.now();
-  const [ps, sd, wh, db] = await Promise.all([psPromise, sdPromise, whPromise, dbPromise]);
+  const results = await Promise.allSettled([psPromise, sdPromise, whPromise, dbPromise]);
   const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+
+  const [psR, sdR, whR, dbR] = results;
+  const ps = psR.status === 'fulfilled' ? psR.value : { error: psR.reason?.message || 'Failed' };
+  const sd = sdR.status === 'fulfilled' ? sdR.value : { error: sdR.reason?.message || 'Failed' };
+  const wh = whR.status === 'fulfilled' ? whR.value : { error: whR.reason?.message || 'Failed' };
+  const db = dbR.status === 'fulfilled' ? dbR.value : { error: dbR.reason?.message || 'Failed' };
 
   // Print Summary
   appendLine('fr-output', `[*] All scans completed in ${duration}s.`, 'info');

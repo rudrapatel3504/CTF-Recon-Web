@@ -168,19 +168,28 @@ def whois_lookup():
     except Exception as e:
         result["geo_error"] = str(e)
 
-    # WHOIS
+    # WHOIS (run in thread with timeout so it can't hang forever)
     try:
         import whois
-        w = whois.whois(target)
-        result["whois"] = {
-            "domain":      str(w.domain_name or ""),
-            "registrar":   str(w.registrar or ""),
-            "created":     str(w.creation_date[0] if isinstance(w.creation_date, list) else w.creation_date or ""),
-            "expires":     str(w.expiration_date[0] if isinstance(w.expiration_date, list) else w.expiration_date or ""),
-            "nameservers": ", ".join(w.name_servers or [])[:100],
-            "org":         str(w.org or ""),
-            "emails":      str(w.emails[0] if isinstance(w.emails, list) else w.emails or ""),
-        }
+        def do_whois():
+            w = whois.whois(target)
+            return {
+                "domain":      str(w.domain_name or ""),
+                "registrar":   str(w.registrar or ""),
+                "created":     str(w.creation_date[0] if isinstance(w.creation_date, list) else w.creation_date or ""),
+                "expires":     str(w.expiration_date[0] if isinstance(w.expiration_date, list) else w.expiration_date or ""),
+                "nameservers": ", ".join(w.name_servers or [])[:100],
+                "org":         str(w.org or ""),
+                "emails":      str(w.emails[0] if isinstance(w.emails, list) else w.emails or ""),
+            }
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            future = ex.submit(do_whois)
+            try:
+                result["whois"] = future.result(timeout=15)
+            except concurrent.futures.TimeoutError:
+                result["whois_error"] = "WHOIS lookup timed out after 15s"
+            except Exception as e:
+                result["whois_error"] = str(e)
     except Exception as e:
         result["whois_error"] = str(e)
 
