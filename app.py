@@ -3,6 +3,7 @@ CTF Recon Tool - Flask Web App
 """
 
 from flask import Flask, render_template, request, jsonify, stream_with_context, Response, send_file
+from flask_cors import CORS
 import io
 import socket
 import concurrent.futures
@@ -21,6 +22,7 @@ from datetime import date, timedelta
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
+CORS(app)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB max upload
 
 # Always return JSON errors (never HTML)

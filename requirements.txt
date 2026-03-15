@@ -2,3 +2,4 @@ flask>=3.0.0
 python-whois>=0.9.4
 gunicorn>=21.0.0
 fpdf2>=2.7.9
+Flask-Cors>=4.0.0
