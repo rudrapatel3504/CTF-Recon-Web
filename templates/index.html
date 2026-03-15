@@ -780,7 +780,7 @@ let lastFullReport = null;
 let lastFullTarget = "";
 
 // Helper: fetch with a hard timeout (ms). Returns {error} on timeout/network fail.
-function fetchWithTimeout(url, options, ms = 60000) {
+function fetchWithTimeout(url, options, ms = 90000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
   return fetch(url, { ...options, signal: controller.signal })
@@ -792,91 +792,99 @@ function fetchWithTimeout(url, options, ms = 60000) {
 async function runFullRecon() {
   const targetInput = document.getElementById('fr-target').value.trim();
   if (!targetInput) { alert('Enter a target domain or URL!'); return; }
-  
-  // Clean target to a base domain for the network scans, but keep original for dirbrute
+
   const cleanTarget = targetInput.replace(/^https?:\/\//, '').split('/')[0];
   const urlTarget = targetInput.startsWith('http') ? targetInput : `http://${cleanTarget}`;
 
   clearTerminal('fr-output');
   setLoading('fr', true);
   document.getElementById('fr-download-btn').style.display = 'none';
-  
+
   appendLine('fr-output', `[*] Full Recon Target: ${cleanTarget}`, 'info');
   appendLine('fr-output', `[*] Web Target       : ${urlTarget}`, 'info');
-  appendLine('fr-output', `[*] Orchestrating concurrent scans... (60s timeout each)`, 'dim');
+  appendLine('fr-output', `[*] Running 4 scans sequentially...`, 'dim');
   appendLine('fr-output', ``, '');
 
   lastFullReport = { target: cleanTarget };
   lastFullTarget = cleanTarget;
 
-  // All 4 scans run concurrently with 60-second timeouts
-  const TIMEOUT = 60000;
-  const psPromise = fetchWithTimeout('/api/portscan', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({target: cleanTarget, start: 1, end: 1024})
-  }, TIMEOUT);
-
-  const sdPromise = fetchWithTimeout('/api/subdomain', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({domain: cleanTarget})
-  }, TIMEOUT);
-
-  const whPromise = fetchWithTimeout('/api/whois', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({target: cleanTarget})
-  }, TIMEOUT);
-
-  const dbPromise = fetchWithTimeout('/api/dirbrute', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({url: urlTarget})
-  }, TIMEOUT);
-
-  // Use allSettled so one hanging scan never blocks the rest
   const startTime = Date.now();
-  const results = await Promise.allSettled([psPromise, sdPromise, whPromise, dbPromise]);
-  const duration = ((Date.now() - startTime) / 1000).toFixed(2);
 
-  const [psR, sdR, whR, dbR] = results;
-  const ps = psR.status === 'fulfilled' ? psR.value : { error: psR.reason?.message || 'Failed' };
-  const sd = sdR.status === 'fulfilled' ? sdR.value : { error: sdR.reason?.message || 'Failed' };
-  const wh = whR.status === 'fulfilled' ? whR.value : { error: whR.reason?.message || 'Failed' };
-  const db = dbR.status === 'fulfilled' ? dbR.value : { error: dbR.reason?.message || 'Failed' };
-
-  // Print Summary
-  appendLine('fr-output', `[*] All scans completed in ${duration}s.`, 'info');
-  appendLine('fr-output', ``, '');
-  appendLine('fr-output', `── RECON SUMMARY ────────────`, 'header');
-  
-  if (ps.error) appendLine('fr-output', `[-] Port Scan   : ERROR (${ps.error})`, 'error');
-  else {
+  // ── 1. Port Scan ──
+  appendLine('fr-output', `[~] [1/4] Running Port Scan (ports 1-1024)...`, 'dim');
+  const ps = await fetchWithTimeout('/api/portscan', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({target: cleanTarget, start: 1, end: 1024})
+  });
+  if (ps.error) {
+    appendLine('fr-output', `[-] Port Scan   : ERROR — ${ps.error}`, 'error');
+  } else {
     const pCount = ps.open_ports ? ps.open_ports.length : 0;
-    appendLine('fr-output', `[+] Open Ports  : ${pCount} found`, pCount ? 'success' : 'warning');
+    appendLine('fr-output', `[+] Port Scan   : ${pCount} open port(s) found`, pCount ? 'success' : 'warning');
+    if (ps.open_ports) ps.open_ports.forEach(p =>
+      appendLine('fr-output', `    ${String(p.port).padEnd(7)} ${p.service}`, 'success'));
     lastFullReport.port_scan = ps.open_ports;
   }
+  appendLine('fr-output', ``, '');
 
-  if (sd.error) appendLine('fr-output', `[-] Subdomains  : ERROR (${sd.error})`, 'error');
-  else {
+  // ── 2. Subdomain Enum ──
+  appendLine('fr-output', `[~] [2/4] Running Subdomain Enumeration...`, 'dim');
+  const sd = await fetchWithTimeout('/api/subdomain', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({domain: cleanTarget})
+  });
+  if (sd.error) {
+    appendLine('fr-output', `[-] Subdomains  : ERROR — ${sd.error}`, 'error');
+  } else {
     const sCount = sd.found ? sd.found.length : 0;
     appendLine('fr-output', `[+] Subdomains  : ${sCount} discovered`, sCount ? 'success' : 'warning');
+    if (sd.found) sd.found.forEach(f =>
+      appendLine('fr-output', `    ${f.subdomain.padEnd(40)} ${f.ip}`, 'success'));
     lastFullReport.subdomains = sd.found;
   }
+  appendLine('fr-output', ``, '');
 
-  if (wh.error) appendLine('fr-output', `[-] WHOIS/Geo   : ERROR (${wh.error})`, 'error');
-  else {
+  // ── 3. WHOIS / Geo ──
+  appendLine('fr-output', `[~] [3/4] Running WHOIS / Geo Lookup...`, 'dim');
+  const wh = await fetchWithTimeout('/api/whois', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({target: cleanTarget})
+  });
+  if (wh.error) {
+    appendLine('fr-output', `[-] WHOIS/Geo   : ERROR — ${wh.error}`, 'error');
+  } else {
     const country = wh.geo && wh.geo.country ? wh.geo.country : 'Unknown';
     appendLine('fr-output', `[+] Geolocation : ${country}`, 'success');
+    if (wh.geo) Object.entries(wh.geo).forEach(([k,v]) => {
+      if (v) appendLine('fr-output', `    ${k.padEnd(14)}: ${v}`, 'dim');
+    });
     lastFullReport.whois = wh;
   }
+  appendLine('fr-output', ``, '');
 
-  if (db.error) appendLine('fr-output', `[-] Directories : ERROR (${db.error})`, 'error');
-  else {
+  // ── 4. Dir Brute-Force ──
+  appendLine('fr-output', `[~] [4/4] Running Directory Brute-Force...`, 'dim');
+  const db = await fetchWithTimeout('/api/dirbrute', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({url: urlTarget})
+  });
+  if (db.error) {
+    appendLine('fr-output', `[-] Directories : ERROR — ${db.error}`, 'error');
+  } else {
     const dCount = db.found ? db.found.length : 0;
-    appendLine('fr-output', `[+] Directories : ${dCount} paths found`, dCount ? 'success' : 'warning');
+    appendLine('fr-output', `[+] Directories : ${dCount} path(s) found`, dCount ? 'success' : 'warning');
+    if (db.found) db.found.forEach(f =>
+      appendLine('fr-output', `    [${f.status}] ${f.url}`, f.status === 200 ? 'success' : 'warning'));
     lastFullReport.directories = db.found;
   }
-  
+  appendLine('fr-output', ``, '');
+
+  // ── Summary ──
+  const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+  appendLine('fr-output', `── RECON COMPLETE ────────────`, 'header');
+  appendLine('fr-output', `[*] All scans finished in ${duration}s.`, 'info');
   appendLine('fr-output', `─────────────────────────────`, 'dim');
-  
+
   document.getElementById('fr-download-btn').style.display = 'block';
   setLoading('fr', false);
 }
